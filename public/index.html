@@ -138,7 +138,7 @@
   <body>
     <main>
       <h1>Task Manager</h1>
-      <p class="subtitle">Tasks are saved locally on this machine.</p>
+      <p id="subtitle" class="subtitle">Loading tasks...</p>
       <div id="error" class="error" hidden></div>
       <form id="add-form">
         <input
@@ -155,11 +155,16 @@
       <p id="empty-state" class="empty">No tasks yet. Add one above.</p>
     </main>
     <script>
+      const STORAGE_KEY = "ai-coworker-tasks";
       const taskList = document.getElementById("task-list");
       const emptyState = document.getElementById("empty-state");
       const errorBox = document.getElementById("error");
       const addForm = document.getElementById("add-form");
       const titleInput = document.getElementById("title-input");
+      const subtitle = document.getElementById("subtitle");
+
+      /** @type {boolean} */
+      let useApi = false;
 
       function showError(message) {
         errorBox.hidden = !message;
@@ -176,6 +181,85 @@
           throw new Error(body.error || "Request failed");
         }
         return body;
+      }
+
+      async function detectBackend() {
+        try {
+          const response = await fetch("/api/health");
+          useApi = response.ok;
+        } catch {
+          useApi = false;
+        }
+
+        subtitle.textContent = useApi
+          ? "Tasks are saved locally on this machine."
+          : "Tasks are saved in your browser on this device.";
+      }
+
+      function readBrowserTasks() {
+        try {
+          return JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
+        } catch {
+          return [];
+        }
+      }
+
+      function writeBrowserTasks(tasks) {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
+      }
+
+      async function fetchTasks() {
+        if (useApi) {
+          const data = await api("/api/tasks");
+          return data.tasks;
+        }
+        return readBrowserTasks();
+      }
+
+      async function createTask(title) {
+        if (useApi) {
+          await api("/api/tasks", {
+            method: "POST",
+            body: JSON.stringify({ title }),
+          });
+          return;
+        }
+
+        const tasks = readBrowserTasks();
+        tasks.push({
+          id: crypto.randomUUID(),
+          title,
+          completed: false,
+          createdAt: new Date().toISOString(),
+        });
+        writeBrowserTasks(tasks);
+      }
+
+      async function setTaskCompleted(id, completed) {
+        if (useApi) {
+          await api(`/api/tasks/${id}`, {
+            method: "PATCH",
+            body: JSON.stringify({ completed }),
+          });
+          return;
+        }
+
+        const tasks = readBrowserTasks();
+        const task = tasks.find((entry) => entry.id === id);
+        if (!task) {
+          throw new Error("Task not found");
+        }
+        task.completed = completed;
+        writeBrowserTasks(tasks);
+      }
+
+      async function removeTask(id) {
+        if (useApi) {
+          await api(`/api/tasks/${id}`, { method: "DELETE" });
+          return;
+        }
+
+        writeBrowserTasks(readBrowserTasks().filter((entry) => entry.id !== id));
       }
 
       function renderTasks(tasks) {
@@ -195,10 +279,7 @@
           checkbox.addEventListener("change", async () => {
             try {
               showError("");
-              await api(`/api/tasks/${task.id}`, {
-                method: "PATCH",
-                body: JSON.stringify({ completed: checkbox.checked }),
-              });
+              await setTaskCompleted(task.id, checkbox.checked);
               await loadTasks();
             } catch (error) {
               checkbox.checked = !checkbox.checked;
@@ -217,7 +298,7 @@
           deleteButton.addEventListener("click", async () => {
             try {
               showError("");
-              await api(`/api/tasks/${task.id}`, { method: "DELETE" });
+              await removeTask(task.id);
               await loadTasks();
             } catch (error) {
               showError(error.message);
@@ -230,8 +311,7 @@
       }
 
       async function loadTasks() {
-        const data = await api("/api/tasks");
-        renderTasks(data.tasks);
+        renderTasks(await fetchTasks());
       }
 
       addForm.addEventListener("submit", async (event) => {
@@ -243,10 +323,7 @@
 
         try {
           showError("");
-          await api("/api/tasks", {
-            method: "POST",
-            body: JSON.stringify({ title }),
-          });
+          await createTask(title);
           titleInput.value = "";
           await loadTasks();
         } catch (error) {
@@ -254,7 +331,9 @@
         }
       });
 
-      loadTasks().catch((error) => showError(error.message));
+      detectBackend()
+        .then(loadTasks)
+        .catch((error) => showError(error.message));
     </script>
   </body>
 </html>
