@@ -1,0 +1,24 @@
+{
+  "appUrl": "https://app.hathr.ai/",
+  "chatPath": "/chat",
+  "selectors": {
+    "messageInput": "textarea, [contenteditable='true'], [role='textbox']",
+    "sendButton": "button[type='submit'], button:has-text('Send'), button:has-text('Submit')",
+    "assistantMessage": "[data-role='assistant'], .assistant-message, .message-assistant, [class*='assistant']",
+    "newChatButton": "button:has-text('New'), a:has-text('New Chat'), [aria-label*='New']"
+  },
+  "timing": {
+    "minPauseMs": 180,
+    "maxPauseMs": 720,
+    "minTypingDelayMs": 42,
+    "maxTypingDelayMs": 118,
+    "thinkPauseMs": [900, 2400],
+    "responsePollMs": 1500,
+    "responseTimeoutMs": 120000
+  },
+  "browser": {
+    "headless": false,
+    "slowMo": 0,
+    "viewport": { "width": 1366, "height": 900 }
+  }
+}
