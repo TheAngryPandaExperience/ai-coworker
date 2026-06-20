@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Task Manager</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        font-family: system-ui, sans-serif;
+        line-height: 1.5;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: #f4f4f5;
+        color: #18181b;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        body {
+          background: #09090b;
+          color: #fafafa;
+        }
+      }
+
+      main {
+        max-width: 32rem;
+        margin: 0 auto;
+        padding: 2rem 1rem;
+      }
+
+      h1 {
+        margin: 0 0 0.25rem;
+        font-size: 1.75rem;
+      }
+
+      .subtitle {
+        margin: 0 0 1.5rem;
+        color: #71717a;
+      }
+
+      form {
+        display: flex;
+        gap: 0.5rem;
+        margin-bottom: 1.5rem;
+      }
+
+      input[type="text"] {
+        flex: 1;
+        padding: 0.625rem 0.75rem;
+        border: 1px solid #d4d4d8;
+        border-radius: 0.5rem;
+        font: inherit;
+      }
+
+      button {
+        padding: 0.625rem 0.875rem;
+        border: none;
+        border-radius: 0.5rem;
+        background: #2563eb;
+        color: #fff;
+        font: inherit;
+        cursor: pointer;
+      }
+
+      button.secondary {
+        background: transparent;
+        color: #71717a;
+        border: 1px solid #d4d4d8;
+      }
+
+      ul {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: grid;
+        gap: 0.75rem;
+      }
+
+      li {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        padding: 0.875rem 1rem;
+        background: #fff;
+        border: 1px solid #e4e4e7;
+        border-radius: 0.75rem;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        input[type="text"],
+        li {
+          background: #18181b;
+          border-color: #3f3f46;
+        }
+
+        button.secondary {
+          border-color: #3f3f46;
+          color: #a1a1aa;
+        }
+      }
+
+      li.completed .title {
+        text-decoration: line-through;
+        color: #71717a;
+      }
+
+      .title {
+        flex: 1;
+      }
+
+      .empty {
+        padding: 1rem;
+        text-align: center;
+        color: #71717a;
+        border: 1px dashed #d4d4d8;
+        border-radius: 0.75rem;
+      }
+
+      .error {
+        margin-bottom: 1rem;
+        padding: 0.75rem 1rem;
+        border-radius: 0.5rem;
+        background: #fef2f2;
+        color: #b91c1c;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        .error {
+          background: #450a0a;
+          color: #fecaca;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Task Manager</h1>
+      <p class="subtitle">Tasks are saved locally on this machine.</p>
+      <div id="error" class="error" hidden></div>
+      <form id="add-form">
+        <input
+          id="title-input"
+          type="text"
+          name="title"
+          placeholder="What needs doing?"
+          autocomplete="off"
+          required
+        />
+        <button type="submit">Add</button>
+      </form>
+      <ul id="task-list"></ul>
+      <p id="empty-state" class="empty">No tasks yet. Add one above.</p>
+    </main>
+    <script>
+      const taskList = document.getElementById("task-list");
+      const emptyState = document.getElementById("empty-state");
+      const errorBox = document.getElementById("error");
+      const addForm = document.getElementById("add-form");
+      const titleInput = document.getElementById("title-input");
+
+      function showError(message) {
+        errorBox.hidden = !message;
+        errorBox.textContent = message || "";
+      }
+
+      async function api(path, options = {}) {
+        const response = await fetch(path, {
+          headers: { "Content-Type": "application/json" },
+          ...options,
+        });
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(body.error || "Request failed");
+        }
+        return body;
+      }
+
+      function renderTasks(tasks) {
+        taskList.innerHTML = "";
+        emptyState.hidden = tasks.length > 0;
+
+        for (const task of tasks) {
+          const item = document.createElement("li");
+          if (task.completed) {
+            item.classList.add("completed");
+          }
+
+          const checkbox = document.createElement("input");
+          checkbox.type = "checkbox";
+          checkbox.checked = task.completed;
+          checkbox.setAttribute("aria-label", `Mark "${task.title}" complete`);
+          checkbox.addEventListener("change", async () => {
+            try {
+              showError("");
+              await api(`/api/tasks/${task.id}`, {
+                method: "PATCH",
+                body: JSON.stringify({ completed: checkbox.checked }),
+              });
+              await loadTasks();
+            } catch (error) {
+              checkbox.checked = !checkbox.checked;
+              showError(error.message);
+            }
+          });
+
+          const title = document.createElement("span");
+          title.className = "title";
+          title.textContent = task.title;
+
+          const deleteButton = document.createElement("button");
+          deleteButton.type = "button";
+          deleteButton.className = "secondary";
+          deleteButton.textContent = "Delete";
+          deleteButton.addEventListener("click", async () => {
+            try {
+              showError("");
+              await api(`/api/tasks/${task.id}`, { method: "DELETE" });
+              await loadTasks();
+            } catch (error) {
+              showError(error.message);
+            }
+          });
+
+          item.append(checkbox, title, deleteButton);
+          taskList.append(item);
+        }
+      }
+
+      async function loadTasks() {
+        const data = await api("/api/tasks");
+        renderTasks(data.tasks);
+      }
+
+      addForm.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const title = titleInput.value.trim();
+        if (!title) {
+          return;
+        }
+
+        try {
+          showError("");
+          await api("/api/tasks", {
+            method: "POST",
+            body: JSON.stringify({ title }),
+          });
+          titleInput.value = "";
+          await loadTasks();
+        } catch (error) {
+          showError(error.message);
+        }
+      });
+
+      loadTasks().catch((error) => showError(error.message));
+    </script>
+  </body>
+</html>
